@@ -17,6 +17,6 @@ RUN apk add ca-certificates && update-ca-certificates
 
 # final stage
 FROM scratch
-COPY --from=builder /app/domainik-binary /app/
+COPY --from=builder /app/home-alerter /app/
 COPY --from=certs /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 ENTRYPOINT ["/app/home-alerter"]
