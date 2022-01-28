@@ -46,7 +46,6 @@ func main() {
 	envEndpoint, hasMetricsEndpoint := os.LookupEnv("METRICS_ENDPOINT")
 
 	chatId, err := strconv.Atoi(envChatId)
-	var messageId *int
 
 	if err != nil || !hasChatId || !hasBotToken || !hasMetricsEndpoint {
 		panic(errors.New("Invalid Configuration"))
@@ -123,7 +122,7 @@ func main() {
 			if len(diffAlertList) > 0 {
 
 				fmt.Printf("Found other alerts, sending message\n")
-				messageId, err = telegramBot.WriteMessage(messageId, triggeredAlerts)
+				err = telegramBot.WriteMessage(triggeredAlerts)
 
 				if err != nil {
 					panic(err)

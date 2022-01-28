@@ -10,8 +10,9 @@ import (
 )
 
 type Telegram struct {
-	bot    *tgbotapi.BotAPI
-	chatId int64
+	bot           *tgbotapi.BotAPI
+	chatId        int64
+	lastMessageId *int
 }
 
 var resolvedAlerts = []string{
@@ -45,13 +46,14 @@ func New(botToken string, chatId int64) (*Telegram, error) {
 	return &t, nil
 }
 
-func (t *Telegram) WriteMessage(knownMessageId *int, alerts []*alertmanager.TriggeredAlert) (*int, error) {
+func (t *Telegram) WriteMessage(alerts []*alertmanager.TriggeredAlert) error {
 	if len(alerts) == 0 {
 		message := GetRandomMessage(resolvedAlerts)
 		m := tgbotapi.NewMessage(t.chatId, message)
 		m.ParseMode = tgbotapi.ModeMarkdown
-		msg, err := t.bot.Send(m)
-		return &msg.MessageID, err
+		_, err := t.bot.Send(m)
+		t.lastMessageId = nil
+		return err
 	}
 
 	currentAlertMessage := GetRandomMessage(currentAlerts)
@@ -86,15 +88,17 @@ func (t *Telegram) WriteMessage(knownMessageId *int, alerts []*alertmanager.Trig
 	messageParts = append(messageParts, "", "Schau mal besser nach...")
 	finishedMessage := strings.Join(messageParts, "\n")
 
-	if knownMessageId != nil {
-		m := tgbotapi.NewEditMessageText(t.chatId, *knownMessageId, finishedMessage)
+	if t.lastMessageId != nil {
+		m := tgbotapi.NewEditMessageText(t.chatId, *t.lastMessageId, finishedMessage)
 		m.ParseMode = tgbotapi.ModeMarkdown
 		sendMsg, err := t.bot.Send(m)
-		return &sendMsg.MessageID, err
+		t.lastMessageId = &sendMsg.MessageID
+		return err
 	} else {
 		m := tgbotapi.NewMessage(t.chatId, finishedMessage)
 		m.ParseMode = tgbotapi.ModeMarkdown
 		sendMsg, err := t.bot.Send(m)
-		return &sendMsg.MessageID, err
+		t.lastMessageId = &sendMsg.MessageID
+		return err
 	}
 }
