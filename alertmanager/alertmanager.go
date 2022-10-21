@@ -41,11 +41,14 @@ type AlertRule struct {
 }
 
 type AlertManager struct {
-	rules []*AlertRule
+	metricsUrl string
+	rules      []*AlertRule
 }
 
-func NewAlertManager() *AlertManager {
-	alertManager := AlertManager{}
+func NewAlertManager(url string) *AlertManager {
+	alertManager := AlertManager{
+		metricsUrl: url,
+	}
 	return &alertManager
 }
 
@@ -61,9 +64,9 @@ func (am *AlertManager) AddRule(title string, description string, metric string,
 	am.rules = append(am.rules, &rule)
 }
 
-func (am *AlertManager) CheckEndpoint(url string) ([]*TriggeredAlert, error) {
+func (am *AlertManager) CheckEndpoint() ([]*TriggeredAlert, error) {
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(am.metricsUrl)
 	if err != nil {
 		return nil, err
 	}

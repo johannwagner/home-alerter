@@ -4,6 +4,7 @@ import (
 	"bytes"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/johannwagner/home-alerter/alertmanager"
+	"github.com/johannwagner/home-alerter/ventilation"
 	"math/rand"
 	"strings"
 	"text/template"
@@ -29,6 +30,18 @@ var currentAlerts = []string{
 	"Hier schepperts gleich, was is denn los hier?",
 }
 
+var doNotVentMessages = []string{
+	"Es wäre jetzt eigentlich Zeit zu lüften, aber draußen isses noch feuchter als bei Oma im Keller.",
+}
+
+var maybeVentMessages = []string{
+	"Man könnte jetzt mal lüften, aber viel trockener wirds dadurch nicht.",
+}
+
+var ventMessages = []string{
+	"LÜFTEN! LÜFTEN! LÜFTEN!",
+}
+
 func GetRandomMessage(messageList []string) string {
 	lenMessages := len(messageList)
 	randomIndex := rand.Intn(lenMessages)
@@ -44,6 +57,61 @@ func New(botToken string, chatId int64) (*Telegram, error) {
 
 	t := Telegram{bot: bot, chatId: chatId}
 	return &t, nil
+}
+
+func (t *Telegram) StartCommandWatch(manager *ventilation.VentilationManager) {
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates := t.bot.GetUpdatesChan(u)
+
+	for update := range updates {
+		if update.Message == nil || !update.Message.IsCommand() {
+			continue
+		}
+
+		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+
+		// Extract the command from the Message.
+		switch update.Message.Command() {
+		case "fensterauf":
+			var message string
+			recommendation, _ := manager.NeedsVentilation()
+			if recommendation == ventilation.VentNo {
+				message = GetRandomMessage(doNotVentMessages)
+			} else if recommendation == ventilation.VentMaybe {
+				message = GetRandomMessage(maybeVentMessages)
+			} else {
+				message = GetRandomMessage(ventMessages)
+			}
+
+			msg.Text = message
+		default:
+			msg.Text = "Das versteh ich nicht."
+		}
+
+		_, _ = t.bot.Send(msg)
+	}
+}
+
+func (t *Telegram) WriteReminderForVentilation(recommendation ventilation.VentilationRecommendation) error {
+	var message string
+
+	if recommendation == ventilation.VentNo {
+		message = GetRandomMessage(doNotVentMessages)
+	} else if recommendation == ventilation.VentMaybe {
+		message = GetRandomMessage(maybeVentMessages)
+	} else {
+		message = GetRandomMessage(ventMessages)
+	}
+
+	fullMessageParts := []string{"*Lüftungserinnerung*", "", message}
+	fullMessage := strings.Join(fullMessageParts, "\n")
+
+	m := tgbotapi.NewMessage(t.chatId, fullMessage)
+	m.ParseMode = tgbotapi.ModeMarkdown
+	_, err := t.bot.Send(m)
+	return err
 }
 
 func (t *Telegram) WriteMessage(alerts []*alertmanager.TriggeredAlert) error {

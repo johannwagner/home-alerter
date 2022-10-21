@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"github.com/johannwagner/home-alerter/alertmanager"
+	reminder "github.com/johannwagner/home-alerter/reminder"
 	"github.com/johannwagner/home-alerter/telegram"
+	"github.com/johannwagner/home-alerter/ventilation"
 	io_prometheus_client "github.com/prometheus/client_model/go"
 	"os"
 	"strconv"
@@ -45,13 +48,60 @@ func main() {
 	envBotToken, hasBotToken := os.LookupEnv("TELEGRAM_BOT_TOKEN")
 	envEndpoint, hasMetricsEndpoint := os.LookupEnv("METRICS_ENDPOINT")
 
-	chatId, err := strconv.Atoi(envChatId)
+	envLat, hasLat := os.LookupEnv("LOCATION_LAT")
+	envLong, hasLong := os.LookupEnv("LOCATION_LON")
+	envOpenWeatherAPIKey, hasApiKey := os.LookupEnv("OPENWEATHERMAP_API_KEY")
 
-	if err != nil || !hasChatId || !hasBotToken || !hasMetricsEndpoint {
+	chatId, err := strconv.Atoi(envChatId)
+	telegramBot, err := telegram.New(envBotToken, int64(chatId))
+	if err != nil {
+		panic(err)
+	}
+
+	if err != nil || !hasChatId || !hasBotToken || !hasMetricsEndpoint || !hasLat || !hasLong || !hasApiKey {
 		panic(errors.New("Invalid Configuration"))
 	}
 
-	alertManager := alertmanager.NewAlertManager()
+	ventilationManager, err := ventilation.NewVentilationManager(envEndpoint, envLat, envLong, envOpenWeatherAPIKey)
+	if err != nil {
+		panic(err)
+	}
+
+	go func() {
+		telegramBot.StartCommandWatch(ventilationManager)
+	}()
+
+	ventilationReminderTime1 := time.Date(2020, time.January, 1, 8, 0, 0, 0, time.Local)
+	ventilationReminderTime2 := time.Date(2020, time.January, 1, 22, 0, 0, 0, time.Local)
+
+	ventilationReminder := reminder.Reminder{
+		DailyTimes: []*time.Time{
+			&ventilationReminderTime1,
+			&ventilationReminderTime2,
+		},
+		Timezone: time.Local,
+		ExecutionFunction: func() error {
+			vent, err := ventilationManager.NeedsVentilation()
+			if err != nil {
+				return err
+			}
+			err = telegramBot.WriteReminderForVentilation(vent)
+			return err
+		},
+	}
+
+	allReminders := []*reminder.Reminder{
+		&ventilationReminder,
+	}
+
+	reminderManager := reminder.NewReminderManager(allReminders)
+
+	go func() {
+		err = reminderManager.Start(context.Background())
+		panic(err)
+	}()
+
+	alertManager := alertmanager.NewAlertManager(envEndpoint)
 
 	alertManager.AddRule(
 		"Heizleistung",
@@ -96,11 +146,6 @@ func main() {
 		},
 	)
 
-	telegramBot, err := telegram.New(envBotToken, int64(chatId))
-	if err != nil {
-		panic(err)
-	}
-
 	ticker := time.NewTicker(1 * time.Minute)
 
 	savedAlerts := []*alertmanager.TriggeredAlert{}
@@ -110,7 +155,7 @@ func main() {
 		case <-ticker.C:
 			fmt.Printf("Checking for alerts\n")
 
-			triggeredAlerts, err := alertManager.CheckEndpoint(envEndpoint)
+			triggeredAlerts, err := alertManager.CheckEndpoint()
 			if err != nil {
 				panic(err)
 			}
