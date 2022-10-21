@@ -44,6 +44,11 @@ func diffAlertLists(a, b []*alertmanager.TriggeredAlert) []string {
 
 func main() {
 
+	europeBerlinLocation, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		panic(err)
+	}
+
 	envChatId, hasChatId := os.LookupEnv("TELEGRAM_CHAT_ID")
 	envBotToken, hasBotToken := os.LookupEnv("TELEGRAM_BOT_TOKEN")
 	envEndpoint, hasMetricsEndpoint := os.LookupEnv("METRICS_ENDPOINT")
@@ -71,15 +76,15 @@ func main() {
 		telegramBot.StartCommandWatch(ventilationManager)
 	}()
 
-	ventilationReminderTime1 := time.Date(2020, time.January, 1, 8, 0, 0, 0, time.Local)
-	ventilationReminderTime2 := time.Date(2020, time.January, 1, 22, 0, 0, 0, time.Local)
+	ventilationReminderTime1 := time.Date(2020, time.January, 1, 8, 0, 0, 0, europeBerlinLocation)
+	ventilationReminderTime2 := time.Date(2020, time.January, 1, 22, 0, 0, 0, europeBerlinLocation)
 
 	ventilationReminder := reminder.Reminder{
 		DailyTimes: []*time.Time{
 			&ventilationReminderTime1,
 			&ventilationReminderTime2,
 		},
-		Timezone: time.Local,
+		Timezone: europeBerlinLocation,
 		ExecutionFunction: func() error {
 			vent, err := ventilationManager.NeedsVentilation()
 			if err != nil {
